@@ -95,34 +95,37 @@ def generate_post(post_type: str, article=None, tip_theme=None) -> str:
         import re
         excerpt = re.sub(r"<[^>]+>", "", excerpt).strip()[:300]
 
-        prompt = f"""Write an engaging Threads post (Instagram-style) in English to promote this Japan travel article.
+        prompt = f"""Write a viral-worthy Threads post in English to promote this Japan travel article.
 
 Article title: {title}
 Article URL: {link}
 Article excerpt: {excerpt}
 
 Requirements:
-- 150-220 characters max (Threads limit is 500 but keep it punchy)
-- Start with an eye-catching hook or emoji
-- Mention 1-2 specific highlights from the article
-- End with the URL
-- Add 3-5 relevant hashtags at the end (e.g. #JapanTravel #VisitJapan #TravelTips)
-- Tone: friendly, enthusiastic, helpful
+- 200-350 characters for the main content (before URL and hashtags)
+- Open with a scroll-stopping hook: a surprising fact, bold statement, or "Most tourists don't know this..." style opener
+- Use a short punchy sentence structure — no long paragraphs
+- Include 1 specific, concrete detail from the article that feels surprising or genuinely useful
+- End the main content with a soft CTA like "Full guide →" or "Read before you go →" followed by the URL on a new line
+- Add 3-4 hashtags on the final line (e.g. #JapanTravel #VisitJapan #TravelTips #Japan)
+- Tone: confident, conversational, like a well-traveled friend sharing insider knowledge — NOT a travel brochure
 
 Output ONLY the post text, nothing else."""
 
     else:  # tip
         theme = tip_theme or random.choice(TRAVEL_TIP_THEMES)
-        prompt = f"""Write an engaging Threads post in English sharing a useful Japan travel tip or life hack.
+        prompt = f"""Write a viral-worthy Threads post in English sharing a Japan travel tip.
 
 Topic: {theme}
 
 Requirements:
-- 150-250 characters for the main content
-- Start with an eye-catching emoji or hook
-- Share 2-3 concrete, actionable tips
-- Keep it conversational and friendly
-- Add 3-5 relevant hashtags at the end (e.g. #JapanTravel #JapanTips #TravelHacks #VisitJapan)
+- 200-350 characters for the main content
+- Open with a scroll-stopping hook: a surprising fact, "Nobody tells you this...", a relatable traveler moment, or a bold claim
+- Use short punchy lines — break it up for easy reading
+- Share 2-3 specific, actionable tips with concrete details (prices, names, exact steps)
+- Make it feel like insider knowledge from someone who actually lives in Japan
+- End with a light CTA like "Save this for your trip 🗾" or "Tag someone going to Japan"
+- Add 3-4 hashtags on the final line (e.g. #JapanTravel #JapanTips #TravelHacks #VisitJapan)
 - Do NOT include any URLs
 
 Output ONLY the post text, nothing else."""
