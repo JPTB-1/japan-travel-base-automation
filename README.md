@@ -1,0 +1,1 @@
+# japan-travel-base-automation
