@@ -1,0 +1,10 @@
+.env
+gsc_credentials.json
+*.log
+*.csv
+gsc_insights.json
+competitor_insights.json
+destination_state.json
+__pycache__/
+*.pyc
+save_token.py

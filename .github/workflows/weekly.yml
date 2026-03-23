@@ -1,0 +1,62 @@
+name: Weekly Tasks
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'    # JST 9:00 月曜 — 目的地記事
+    - cron: '30 23 * * 1'  # JST 8:30 月曜 — 競合分析
+  workflow_dispatch:
+
+jobs:
+  destination:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 0 * * 1' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install anthropic openai requests python-dotenv
+
+      - name: Create .env
+        run: |
+          cat << EOF > .env
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          WP_URL=${{ secrets.WP_URL }}
+          WP_USER=${{ secrets.WP_USER }}
+          WP_APP_PASSWORD=${{ secrets.WP_APP_PASSWORD }}
+          EOF
+
+      - name: Generate destination article
+        run: python generate_destination.py
+
+  competitor-analysis:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '30 23 * * 1' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install anthropic requests python-dotenv google-api-python-client google-auth
+
+      - name: Create .env
+        run: |
+          cat << EOF > .env
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}
+          GSC_SITE_URL=${{ secrets.GSC_SITE_URL }}
+          GOOGLE_GSC_CREDENTIALS=gsc_credentials.json
+          EOF
+
+      - name: Create GSC credentials
+        run: echo "${{ secrets.GSC_CREDENTIALS_JSON }}" | base64 -d > gsc_credentials.json
+
+      - name: Run competitor analysis
+        run: python analyze_competitors.py --from-gsc
