@@ -111,29 +111,33 @@ function jptb_fetch_and_create_posts() {
         }
 
         // Upload and set featured image
-        if (!empty($article['featured_image_b64'])) {
-            $image_data = base64_decode($article['featured_image_b64']);
-            if ($image_data) {
-                $upload = wp_upload_bits(
-                    sanitize_file_name($article['title']) . '.png',
-                    null,
-                    $image_data
-                );
-                if (empty($upload['error'])) {
-                    $attachment_id = wp_insert_attachment([
-                        'post_mime_type' => 'image/png',
-                        'post_title'     => sanitize_text_field($article['title']),
-                        'post_status'    => 'inherit',
-                    ], $upload['file'], $post_id);
+        if (!empty($article['image_filename'])) {
+            $image_url = JPTB_GITHUB_RAW . $article['image_filename'] . '?t=' . time();
+            $image_resp = wp_remote_get($image_url, ['timeout' => 30]);
+            if (!is_wp_error($image_resp)) {
+                $image_data = wp_remote_retrieve_body($image_resp);
+                if ($image_data) {
+                    $upload = wp_upload_bits(
+                        sanitize_file_name($article['title']) . '.png',
+                        null,
+                        $image_data
+                    );
+                    if (empty($upload['error'])) {
+                        $attachment_id = wp_insert_attachment([
+                            'post_mime_type' => 'image/png',
+                            'post_title'     => sanitize_text_field($article['title']),
+                            'post_status'    => 'inherit',
+                        ], $upload['file'], $post_id);
 
-                    if (!is_wp_error($attachment_id)) {
-                        require_once ABSPATH . 'wp-admin/includes/image.php';
-                        wp_update_attachment_metadata(
-                            $attachment_id,
-                            wp_generate_attachment_metadata($attachment_id, $upload['file'])
-                        );
-                        set_post_thumbnail($post_id, $attachment_id);
-                        error_log('[JPTB] Featured image set for post ' . $post_id);
+                        if (!is_wp_error($attachment_id)) {
+                            require_once ABSPATH . 'wp-admin/includes/image.php';
+                            wp_update_attachment_metadata(
+                                $attachment_id,
+                                wp_generate_attachment_metadata($attachment_id, $upload['file'])
+                            );
+                            set_post_thumbnail($post_id, $attachment_id);
+                            error_log('[JPTB] Featured image set for post ' . $post_id);
+                        }
                     }
                 }
             }
