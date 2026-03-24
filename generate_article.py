@@ -426,7 +426,8 @@ IMAGE_PROMPTS = {
 
 def generate_featured_image(theme: str) -> bytes | None:
     """Call DALL-E 3 and return raw PNG bytes, or None on failure."""
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    import re as _re2
+    api_key = _re2.sub(r'\s', '', os.getenv("OPENAI_API_KEY", ""))
     if not api_key:
         print("  [SKIP] OPENAI_API_KEY not set — skipping image generation.")
         return None
