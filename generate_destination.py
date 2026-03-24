@@ -860,7 +860,7 @@ def _static_top_html(updated: str) -> str:
 # Logging
 # ---------------------------------------------------------------------------
 
-def log_success(title: str, region: str, post_id: int) -> None:
+def log_success(title: str, region: str, post_id: int | None) -> None:
     exists = os.path.isfile(LOG_CSV_FILE)
     with open(LOG_CSV_FILE, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -890,17 +890,6 @@ def main() -> None:
 
     state       = load_state()
     dest, idx   = next_destination(state)
-
-    wp_url  = os.getenv("WP_URL", "").rstrip("/")
-    wp_user = os.getenv("WP_USER", "").strip()
-    wp_pass = os.getenv("WP_APP_PASSWORD", "").strip()
-
-    for var, val in [("WP_URL", wp_url), ("WP_USER", wp_user), ("WP_APP_PASSWORD", wp_pass)]:
-        if not val:
-            log_error(f"{var} not set in .env")
-            sys.exit(1)
-
-    auth = (wp_user, wp_pass)
 
     print("=" * 60)
     print(f"  Japan Travel Base — Destination Article Generator")
@@ -980,18 +969,10 @@ def main() -> None:
     }
     save_state(state)
 
-    # 6. Optionally update TOP page
-    if args.update_top:
-        try:
-            update_top_page(auth)
-        except Exception as exc:
-            log_error(f"TOP page update failed — {exc}")
-            print(f"  [WARN] TOP page update failed: {exc}")
+    # 6. Log
+    log_success(article["title"], dest["region"], None)
 
-    # 7. Log
-    log_success(article["title"], dest["region"], post_id)
-
-    print(f"\n  ✓ Draft posted! Post ID: {post_id}")
+    print(f"\n  ✓ Article saved to pending_articles/")
     print(f"  ✓ Next destination: {DESTINATIONS[state['index']]['name']}")
     print(f"  ✓ Logged to {LOG_CSV_FILE}")
     print("=" * 60)
