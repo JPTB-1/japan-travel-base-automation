@@ -807,7 +807,7 @@ def _static_top_html(updated: str) -> str:
 <a class="jtb-badge" href="/category/areas/">🗾 Browse by Area</a>
 <a class="jtb-badge" href="/category/itineraries/">🗺️ Itineraries</a>
 <a class="jtb-badge" href="/category/budget/">💰 By Budget</a>
-<a class="jtb-badge" href="/category/esim-wifi/">📶 eSIM Guide</a>
+<a class="jtb-badge" href="/category/esim-wi-fi/">📶 eSIM Guide</a>
 </div></div></div>
 <div class="jtb-section"><div class="jtb-sh"><span style="font-size:1.4em">🗾</span><div><h2>Browse by Area</h2><p>Choose your destination and start exploring</p></div></div>
 <div class="jtb-area-grid">
@@ -839,7 +839,7 @@ def _static_top_html(updated: str) -> str:
 <div class="jtb-section"><div class="jtb-sh"><span style="font-size:1.4em">🔥</span><div><h2>Popular Topics</h2><p>Guides, tips and tools for your Japan trip</p></div></div>
 <div class="jtb-theme-grid">
 <a class="jtb-tc" href="/category/transport/"><span class="jtb-ti">🚄</span><div>Transport &amp; JR Pass</div><div class="jtb-td">Shinkansen, IC cards, airports</div></a>
-<a class="jtb-tc" href="/category/esim-wifi/"><span class="jtb-ti">📶</span><div>eSIM &amp; Wi-Fi</div><div class="jtb-td">Best SIM cards for Japan</div></a>
+<a class="jtb-tc" href="/category/esim-wi-fi/"><span class="jtb-ti">📶</span><div>eSIM &amp; Wi-Fi</div><div class="jtb-td">Best SIM cards for Japan</div></a>
 <a class="jtb-tc" href="/category/seasonal-travel/"><span class="jtb-ti">🌸</span><div>Seasonal Travel</div><div class="jtb-td">Sakura, koyo, snow festivals</div></a>
 <a class="jtb-tc" href="/category/itineraries/"><span class="jtb-ti">🗺️</span><div>Itineraries</div><div class="jtb-td">Day-by-day Japan trip plans</div></a>
 <a class="jtb-tc" href="/category/travel-tips/"><span class="jtb-ti">💡</span><div>Travel Tips</div><div class="jtb-td">Etiquette, money &amp; more</div></a>
