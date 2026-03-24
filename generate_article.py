@@ -640,7 +640,18 @@ def main() -> None:
     print(f"  Meta    : {article['meta_description']}")
     print(f"  Words   : ~{len(article['content'].split())} (HTML)")
 
-    # 2. Save article to pending_articles/ for WordPress to fetch
+    # 2. Generate featured image
+    image_b64 = None
+    try:
+        image_bytes = generate_featured_image(day_config["theme"])
+        if image_bytes:
+            import base64
+            image_b64 = base64.b64encode(image_bytes).decode("ascii")
+            print(f"  ✓ Featured image generated ({len(image_bytes)//1024}KB)")
+    except Exception as exc:
+        print(f"  [WARN] Image generation failed: {exc}")
+
+    # 3. Save article to pending_articles/ for WordPress to fetch
     os.makedirs("pending_articles", exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     article_filename = f"article_{timestamp}.json"
@@ -654,6 +665,7 @@ def main() -> None:
         "category_slug":    day_config["category_slug"],
         "category_name":    day_config["category_name"],
         "created_at":       datetime.now(timezone.utc).isoformat(),
+        "featured_image_b64": image_b64,
     }
     with open(article_path, "w", encoding="utf-8") as f:
         json.dump(pending_payload, f, ensure_ascii=False, indent=2)
