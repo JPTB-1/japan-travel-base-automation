@@ -640,34 +640,37 @@ def main() -> None:
     print(f"  Meta    : {article['meta_description']}")
     print(f"  Words   : ~{len(article['content'].split())} (HTML)")
 
-    # 2. Post to WordPress
-    try:
-        post_id = post_draft(article, day_config)
-    except (EnvironmentError, requests.HTTPError, requests.ConnectionError) as exc:
-        log_error(f"WordPress post failed — {exc}")
-        sys.exit(1)
+    # 2. Save article to pending_articles/ for WordPress to fetch
+    os.makedirs("pending_articles", exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    article_filename = f"article_{timestamp}.json"
+    article_path = os.path.join("pending_articles", article_filename)
 
-    # 3. Generate + upload featured image
-    wp_user = os.getenv("WP_USER", "").strip()
-    wp_pass = os.getenv("WP_APP_PASSWORD", "").strip()
-    auth    = (wp_user, wp_pass)
+    meta_comment = f'<!-- meta_description: {article["meta_description"]} -->\n'
+    pending_payload = {
+        "title":            article["title"],
+        "content":          meta_comment + article["content"],
+        "meta_description": article["meta_description"],
+        "category_slug":    day_config["category_slug"],
+        "category_name":    day_config["category_name"],
+        "created_at":       datetime.now(timezone.utc).isoformat(),
+    }
+    with open(article_path, "w", encoding="utf-8") as f:
+        json.dump(pending_payload, f, ensure_ascii=False, indent=2)
 
-    try:
-        image_bytes = generate_featured_image(day_config["theme"])
-        if image_bytes:
-            attachment_id = upload_image_to_wp(image_bytes, article["title"], auth)
-            if attachment_id:
-                set_featured_image(post_id, attachment_id, auth)
-    except requests.HTTPError as exc:
-        # Image failure is non-fatal — article is already saved.
-        log_error(f"Featured image failed (post {post_id}) — {exc}")
-        print(f"  [WARN] Image generation/upload failed: {exc}")
+    # Update index.json
+    index_path = "pending_articles/index.json"
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            index_data = json.load(f)
+    else:
+        index_data = {"files": []}
+    index_data["files"].append(article_filename)
+    with open(index_path, "w", encoding="utf-8") as f:
+        json.dump(index_data, f, indent=2)
 
-    # 4. Log success
-    log_success(article["title"], day_config["category_name"], post_id)
-
-    print(f"\n  ✓ Draft posted successfully! Post ID: {post_id}")
-    print(f"  ✓ Logged to {LOG_CSV_FILE}")
+    print(f"\n  ✓ Article saved to {article_path}")
+    print(f"  ✓ WordPress will fetch and create draft automatically")
     print("=" * 60)
 
 

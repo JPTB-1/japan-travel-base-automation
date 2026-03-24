@@ -38,3 +38,11 @@ jobs:
 
       - name: Generate article
         run: python generate_article.py
+
+      - name: Commit pending article
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pending_articles/
+          git diff --staged --quiet || git commit -m "Add pending article $(date -u +%Y-%m-%d)"
+          git push
