@@ -884,10 +884,28 @@ def log_error(message: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--update-top", action="store_true",
-                        help="Also regenerate the TOP page navigation.")
+                        help="Only regenerate the TOP page navigation (skip article generation).")
     parser.add_argument("--dry-run", action="store_true",
                         help="Generate article content but do not post to WordPress.")
     args = parser.parse_args()
+
+    # --update-top only mode: just update the front page and exit
+    if args.update_top:
+        wp_url  = os.getenv("WP_URL", "").rstrip("/")
+        wp_user = os.getenv("WP_USER", "").strip()
+        wp_pass = os.getenv("WP_APP_PASSWORD", "").strip()
+        for var, val in [("WP_URL", wp_url), ("WP_USER", wp_user), ("WP_APP_PASSWORD", wp_pass)]:
+            if not val:
+                print(f"[ERROR] {var} not set in .env", file=sys.stderr)
+                sys.exit(1)
+        auth = (wp_user, wp_pass)
+        try:
+            update_top_page(auth)
+            print("  ✓ TOP page updated.")
+        except Exception as exc:
+            print(f"[ERROR] TOP page update failed — {exc}", file=sys.stderr)
+            sys.exit(1)
+        return
 
     state       = load_state()
     dest, idx   = next_destination(state)
