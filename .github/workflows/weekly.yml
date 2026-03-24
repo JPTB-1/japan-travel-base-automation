@@ -49,8 +49,8 @@ jobs:
 
       - name: Create GSC credentials
         env:
-          GSC_CREDENTIALS_JSON: ${{ secrets.GSC_CREDENTIALS_JSON }}
-        run: python3 -c "import os; open('gsc_credentials.json','w').write(os.environ['GSC_CREDENTIALS_JSON'])"
+          GSC_CREDENTIALS_B64: ${{ secrets.GSC_CREDENTIALS_B64 }}
+        run: python3 -c "import base64,os; open('gsc_credentials.json','wb').write(base64.b64decode(os.environ['GSC_CREDENTIALS_B64'].strip()))"
 
       - name: Run competitor analysis
         run: python analyze_competitors.py --from-gsc
