@@ -748,15 +748,7 @@ def update_top_page(auth: tuple) -> None:
 
     updated = datetime.now().strftime("%B %d, %Y")
 
-    if api_key:
-        client = anthropic.Anthropic(api_key=api_key)
-        try:
-            nav_html = _research_and_generate_top_html(client, updated)
-        except Exception as exc:
-            print(f"  [WARN] Research-based generation failed ({exc}), using static template.")
-            nav_html = _static_top_html(updated)
-    else:
-        nav_html = _static_top_html(updated)
+    nav_html = _static_top_html(updated)
 
     resp = requests.post(
         f"{wp_url}/wp-json/wp/v2/pages/{front_page_id}",
