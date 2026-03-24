@@ -924,36 +924,58 @@ def main() -> None:
         print("\n  [DRY RUN] Skipping WordPress post.")
         return
 
-    # 2. Resolve categories
-    try:
-        category_ids = resolve_categories(wp_url, auth, dest)
-    except Exception as exc:
-        log_error(f"Category resolution failed — {exc}")
-        sys.exit(1)
-
-    # 3. Post draft
-    try:
-        post_id = post_draft(article, category_ids, auth)
-    except Exception as exc:
-        log_error(f"WordPress post failed — {exc}")
-        sys.exit(1)
-
-    # 4. Featured image
+    # 2. Generate featured image
+    import re as _re3
+    openai_key = _re3.sub(r'\s', '', os.getenv("OPENAI_API_KEY", ""))
+    image_filename = None
     try:
         img = generate_featured_image(dest["image_prompt"])
         if img:
-            aid = upload_image_to_wp(img, article["title"], auth)
-            if aid:
-                set_featured_image(post_id, aid, auth)
+            os.makedirs("pending_articles", exist_ok=True)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            image_filename = f"image_{timestamp}.png"
+            with open(os.path.join("pending_articles", image_filename), "wb") as f:
+                f.write(img)
+            print(f"  ✓ Featured image saved ({len(img)//1024}KB)")
     except Exception as exc:
-        log_error(f"Image failed (post {post_id}) — {exc}")
-        print(f"  [WARN] Image failed: {exc}")
+        print(f"  [WARN] Image generation failed: {exc}")
 
-    # 5. Update state → advance rotation
+    # 3. Save to pending_articles/
+    os.makedirs("pending_articles", exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    article_filename = f"article_{timestamp}.json"
+    article_path = os.path.join("pending_articles", article_filename)
+
+    pending_payload = {
+        "title":            article["title"],
+        "content":          article["content"],
+        "meta_description": article["meta_description"],
+        "category_slug":    dest.get("region", "destinations").lower().replace(" ", "-"),
+        "category_name":    dest.get("region", "Destinations"),
+        "created_at":       datetime.now(timezone.utc).isoformat(),
+        "image_filename":   image_filename,
+    }
+    with open(article_path, "w", encoding="utf-8") as f:
+        json.dump(pending_payload, f, ensure_ascii=False, indent=2)
+
+    # Update index.json
+    index_path = "pending_articles/index.json"
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            index_data = json.load(f)
+    else:
+        index_data = {"files": []}
+    index_data["files"].append(article_filename)
+    with open(index_path, "w", encoding="utf-8") as f:
+        json.dump(index_data, f, indent=2)
+
+    print(f"  ✓ Article saved to {article_path}")
+
+    # 4. Update state → advance rotation
     state["index"]       = (idx + 1) % len(DESTINATIONS)
     state["last_posted"] = {
         "destination": dest["name"],
-        "post_id":     post_id,
+        "post_id":     None,
         "date":        datetime.now(timezone.utc).isoformat(),
     }
     save_state(state)

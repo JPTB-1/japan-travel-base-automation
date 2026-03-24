@@ -10,12 +10,11 @@ jobs:
   destination:
     runs-on: ubuntu-latest
     if: github.event.schedule == '0 0 * * 1' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      WP_URL: ${{ secrets.WP_URL }}
-      WP_USER: ${{ secrets.WP_USER }}
-      WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +27,15 @@ jobs:
 
       - name: Generate destination article
         run: python generate_destination.py
+
+      - name: Commit pending article
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+          git add pending_articles/ destination_state.json
+          git diff --staged --quiet || git commit -m "Add pending destination article $(date -u +%Y-%m-%d)"
+          git push
 
   competitor-analysis:
     runs-on: ubuntu-latest
@@ -51,6 +59,12 @@ jobs:
         env:
           GSC_CREDENTIALS_B64: ${{ secrets.GSC_CREDENTIALS_B64 }}
         run: python3 -c "import base64,os; open('gsc_credentials.json','wb').write(base64.b64decode(os.environ['GSC_CREDENTIALS_B64'].strip()))"
+
+      - name: Run GSC analysis
+        env:
+          GSC_SITE_URL: ${{ secrets.GSC_SITE_URL }}
+          GOOGLE_GSC_CREDENTIALS: gsc_credentials.json
+        run: python analyze_gsc.py
 
       - name: Run competitor analysis
         run: python analyze_competitors.py --from-gsc
