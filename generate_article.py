@@ -355,18 +355,41 @@ def generate_article(day_config: dict, seo_insights: dict | None = None) -> dict
     print()  # newline after streaming
 
     # Parse JSON response
-    try:
-        # Strip possible stray backtick fences just in case
-        cleaned = full_text.strip()
+    import re as _re
+
+    def _extract_article(text: str) -> dict:
+        # Strip backtick fences
+        cleaned = text.strip()
         if cleaned.startswith("```"):
             cleaned = cleaned.split("```", 2)[1]
             if cleaned.startswith("json"):
                 cleaned = cleaned[4:]
             cleaned = cleaned.rsplit("```", 1)[0].strip()
 
-        import re as _re
+        # Remove non-printable control chars except \n \r \t
         cleaned = _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", cleaned)
-        article = json.loads(cleaned)
+
+        # Try direct parse first
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback: extract fields with regex (handles unescaped newlines in content)
+        title = _re.search(r'"title"\s*:\s*"(.*?)"(?=\s*,\s*"meta_description")', cleaned, _re.S)
+        meta  = _re.search(r'"meta_description"\s*:\s*"(.*?)"(?=\s*,\s*"content")', cleaned, _re.S)
+        cont  = _re.search(r'"content"\s*:\s*"(.*?)"\s*\}', cleaned, _re.S)
+        if title and meta and cont:
+            return {
+                "title":            title.group(1).replace('\\"', '"'),
+                "meta_description": meta.group(1).replace('\\"', '"'),
+                "content":          cont.group(1).replace('\\"', '"').replace("\\n", "\n"),
+            }
+
+        raise json.JSONDecodeError("Could not parse response", cleaned, 0)
+
+    try:
+        article = _extract_article(full_text)
     except json.JSONDecodeError as exc:
         raise ValueError(f"Claude returned non-JSON response: {exc}\n---\n{full_text[:500]}") from exc
 
