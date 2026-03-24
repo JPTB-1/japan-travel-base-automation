@@ -29,7 +29,9 @@ jobs:
         run: pip install anthropic openai requests python-dotenv google-api-python-client google-auth
 
       - name: Create GSC credentials
-        run: echo '${{ secrets.GSC_CREDENTIALS_JSON }}' > gsc_credentials.json
+        env:
+          GSC_CREDENTIALS_JSON: ${{ secrets.GSC_CREDENTIALS_JSON }}
+        run: python3 -c "import os; open('gsc_credentials.json','w').write(os.environ['GSC_CREDENTIALS_JSON'])"
 
       - name: Run GSC analysis
         run: python analyze_gsc.py
