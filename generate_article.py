@@ -486,26 +486,29 @@ def set_featured_image(post_id: int, attachment_id: int, auth: tuple) -> None:
 # WordPress REST API
 # ---------------------------------------------------------------------------
 
-def get_or_create_category(wp_url: str, auth: tuple, slug: str, name: str) -> int:
-    """Return WP category ID, creating it if it doesn't exist."""
+def get_or_create_category(wp_url: str, auth: tuple, slug: str, name: str) -> int | None:
+    """Return WP category ID, creating it if it doesn't exist. Returns None on failure."""
     endpoint = f"{wp_url}/wp-json/wp/v2/categories"
 
-    # Check if category exists
-    resp = requests.get(endpoint, params={"slug": slug}, auth=auth, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
-    if data:
-        return data[0]["id"]
+    try:
+        # Check if category exists
+        resp = requests.get(endpoint, params={"slug": slug}, auth=auth, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data:
+            return data[0]["id"]
 
-    # Create it
-    resp = requests.post(
-        endpoint,
-        json={"name": name, "slug": slug},
-        auth=auth,
-        timeout=15,
-    )
-    resp.raise_for_status()
-    return resp.json()["id"]
+        # Create it
+        resp = requests.post(
+            endpoint,
+            json={"name": name, "slug": slug},
+            auth=auth,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()["id"]
+    except Exception as e:
+        print(f"  [WARN] Category lookup/create failed ({e}), posting without category")
 
 
 def post_draft(article: dict, day_config: dict) -> int:
@@ -536,7 +539,7 @@ def post_draft(article: dict, day_config: dict) -> int:
         "title":      article["title"],
         "content":    full_content,
         "status":     "draft",
-        "categories": [category_id],
+        **({"categories": [category_id]} if category_id else {}),
         "meta": {
             "_yoast_wpseo_metadesc":     article["meta_description"],
             "_aioseo_description":       article["meta_description"],
