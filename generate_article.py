@@ -290,11 +290,11 @@ Always structure the article with:
 5. A final H2 section titled "## Plan Your Japan Trip Today" with a CTA
 
 Return ONLY raw JSON — no markdown fences, no extra text — in this exact shape:
-{
+{{
   "title": "<SEO title, max 65 chars>",
   "meta_description": "<155 char max meta description>",
   "content": "<full HTML article body, using <h2>/<h3>/<p>/<ul>/<ol>/<li> tags>"
-}
+}}
 
 Important for shortcode placement:
 - Insert shortcodes as plain text inside <p> tags or on their own line between paragraphs.
