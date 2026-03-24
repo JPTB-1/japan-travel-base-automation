@@ -406,7 +406,8 @@ _IMAGE_STYLE = (
 
 
 def generate_featured_image(image_prompt: str) -> bytes | None:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    import re as _re_img
+    api_key = _re_img.sub(r'\s', '', os.getenv("OPENAI_API_KEY", ""))
     if not api_key:
         print("  [SKIP] OPENAI_API_KEY not set.")
         return None
