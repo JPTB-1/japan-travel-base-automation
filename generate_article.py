@@ -21,8 +21,10 @@ import io
 import json
 import logging
 import os
+import random
 import re
 import sys
+import time
 from datetime import datetime, timezone
 
 import anthropic
@@ -51,87 +53,149 @@ logging.basicConfig(
 
 # weekday() → 0=Mon … 6=Sun
 SCHEDULE = {
-    0: {  # Monday
-        "theme": "Tokyo",
-        "category_slug": "tokyo",
-        "category_name": "Tokyo",
-        "shortcodes": ['[jtb_hotel city="Tokyo" area="Shinjuku"]',
-                       '[jtb_flight origin="SYD" destination="TYO"]'],
-        "prompt_context": (
-            "Focus on area-by-area hotel recommendations and must-see attractions "
-            "in Tokyo. Cover areas like Shinjuku, Shibuya, Asakusa, Akihabara, and "
-            "Harajuku. Include practical tips for navigating each area."
-        ),
-    },
-    1: {  # Tuesday
-        "theme": "Osaka / Kyoto",
-        "category_slug": "osaka-kyoto",
-        "category_name": "Osaka & Kyoto",
-        "shortcodes": ['[jtb_hotel city="Osaka" area="Dotonbori"]',
-                       '[jtb_flight origin="SYD" destination="KIX"]'],
-        "prompt_context": (
-            "Write a comprehensive travel guide covering both Osaka and Kyoto. "
-            "Include top food spots in Osaka (Dotonbori, Kuromon Market), "
-            "cultural landmarks in Kyoto (Fushimi Inari, Arashiyama, Gion), "
-            "and tips for day-tripping between the two cities."
-        ),
-    },
-    2: {  # Wednesday
-        "theme": "Transport in Japan",
+    0: {  # Monday — 低競合: JR Pass vs IC card 具体比較
+        "theme": "JR Pass vs IC Card: Which Suits Your Trip",
         "category_slug": "transport",
         "category_name": "Transport",
         "shortcodes": ['[jtb_flight origin="SYD" destination="TYO"]'],
         "prompt_context": (
-            "Explain Japan's transport system for first-time visitors: "
-            "JR Pass value analysis, Shinkansen tips, IC cards (Suica/Pasmo), "
-            "local subway navigation, airport transfers (Narita vs Haneda), "
-            "and budget airline options within Japan."
+            "Answer the specific question: 'Should I get a JR Pass or just use an IC card for Japan?' "
+            "Frame the answer around trip style and itinerary, not saving money. "
+            "Cover: JR Pass is ideal for multi-city trips (Tokyo → Kyoto → Osaka → Hiroshima), "
+            "IC card (Suica/Pasmo) is ideal for exploring a single city in depth or short regional trips. "
+            "Include Shinkansen fares as practical reference points (Tokyo–Kyoto ¥13,870, Tokyo–Osaka ¥14,720), "
+            "and JR Pass price range (7-day ~$350 USD, 14-day ~$560 USD) so travelers can match to their itinerary. "
+            "Explain what experience each option unlocks — JR Pass = freedom to hop between cities spontaneously; "
+            "IC card = seamless tap-in tap-out for city metro, buses, convenience stores. "
+            "Target query: 'japan rail pass or ic card which do i need' — answer it by itinerary type in the first 100 words. "
+            "Somewhere natural in the article, include a CTA like: "
+            "'<p>Not sure if the JR Pass suits your specific itinerary? "
+            "<a href=\"https://japantravelbase.com/tools/jr-pass-calculator/\">Use our free JR Pass Calculator</a>"
+            "— enter your planned routes and get an instant verdict.</p>'"
         ),
     },
-    3: {  # Thursday — seasonal (auto-detected from current month)
-        "theme": "Seasonal Travel",
-        "category_slug": "seasonal",
-        "category_name": "Seasonal Travel",
-        "shortcodes": ['[jtb_hotel city="Tokyo" area="Ueno"]',
-                       '[jtb_flight origin="SYD" destination="TYO"]'],
-        "prompt_context": None,  # built dynamically below
+    1: {  # Tuesday — 低競合: 初めての訪日者向け箱根ガイド
+        "theme": "Hakone First-Timer Guide",
+        "category_slug": "hakone",
+        "category_name": "Hakone",
+        "shortcodes": ['[jtb_hotel city="Hakone" area="Hakone"]'],
+        "prompt_context": (
+            "Write a specific, practical guide for first-time visitors to Hakone. "
+            "Target query: 'hakone day trip from tokyo what to do'. "
+            "Cover: Hakone Free Pass (worth it or not, exact price ¥6,000), "
+            "the Romancecar train from Shinjuku (60 min, book ahead), "
+            "Owakudani volcanic valley (check if open — sometimes closed for eruption risk), "
+            "Lake Ashi boat cruise, Hakone Open Air Museum (¥1,600 entry). "
+            "Include a realistic single-day itinerary with timings. "
+            "Mention ryokan with private onsen as a reason to stay overnight vs day trip. "
+            "Affiliate angle: Hakone ryokans on Booking.com (high nightly rate = high commission)."
+        ),
     },
-    4: {  # Friday
-        "theme": "Travel Tips",
+    2: {  # Wednesday — SEO強化 or 低競合: 奈良日帰り具体ガイド
+        "theme": "Nara Day Trip from Osaka/Kyoto",
+        "category_slug": "nara",
+        "category_name": "Nara",
+        "shortcodes": ['[jtb_hotel city="Nara" area="Nara"]',
+                       '[jtb_flight origin="SYD" destination="KIX"]'],
+        "prompt_context": (
+            "Answer the specific question: 'Is Nara worth a day trip from Kyoto or Osaka?' "
+            "Target queries: 'nara day trip from kyoto how long', 'nara from osaka day trip'. "
+            "Cover: exact train times and fares (Kintetsu Nara from Osaka: 40 min ¥680; "
+            "JR from Kyoto: 45 min ¥720), what to do in 4-6 hours, "
+            "Todai-ji Temple (¥600 entry, giant Buddha), Kasuga Taisha shrine (free outer, ¥500 inner), "
+            "Nara deer park (deer crackers ¥200, best morning interactions), "
+            "Naramachi historic district for lunch. "
+            "Give a definitive answer: YES worth it, here's the best half-day plan. "
+            "Affiliate: Klook Nara day tour from Osaka/Kyoto for those who want a guide."
+        ),
+    },
+    3: {  # Thursday — 低競合: 具体的な日本旅行プランニングガイド
+        "theme": "Planning Your Japan Trip Budget: What to Expect",
+        "category_slug": "travel-tips",
+        "category_name": "Travel Tips",
+        "shortcodes": ['[jtb_hotel city="Tokyo" area="Shinjuku"]',
+                       '[jtb_flight origin="SYD" destination="TYO"]'],
+        "prompt_context": (
+            "Write a practical planning guide for what a Japan trip actually looks and costs, "
+            "framed around what experiences you get at each level — not around minimizing spend. "
+            "Target query: 'how much does a trip to japan cost from australia 2026'. "
+            "Give REAL numbers as reference points, always tied to the experience: "
+            "Flights SYD–TYO: $800–1,400 return depending on airline and flexibility. "
+            "Accommodation: capsule/hostel ($30–50/night, social and central), "
+            "business hotel ($100–180/night, comfortable, great locations), "
+            "ryokan with kaiseki dinner and private onsen ($250–450/night, a must-do at least one night). "
+            "Food: convenience store breakfast ($5–8, surprisingly good and part of the Japan experience), "
+            "ramen or soba lunch ($10–15), omakase or specialty dinner ($60–120, worth it once or twice). "
+            "Transport: IC card covers all city transit seamlessly; JR Pass unlocks multi-city travel. "
+            "Attractions: most temples/shrines free or under ¥1,000; teamLab ($30), Disneyland (¥9,400). "
+            "Frame totals by experience level: 'a comfortable 7-day trip runs $3,500–5,500 AUD all-in, "
+            "with the biggest variable being accommodation and dining choices.' "
+            "Affiliate: Booking.com hotels at each tier, Klook experiences. "
+            "Somewhere natural in the article, include a CTA like: "
+            "'<p>Want a personalised estimate for your specific trip? "
+            "<a href=\"https://japantravelbase.com/tools/japan-trip-budget-calculator/\">Try our free Japan Budget Calculator</a>"
+            "— choose your travel style and duration to get a breakdown in seconds.</p>'"
+        ),
+    },
+    4: {  # Friday — 低競合: 訪日前に知るべき実用Tips（具体的）
+        "theme": "Japan First-Timer Mistakes to Avoid",
         "category_slug": "travel-tips",
         "category_name": "Travel Tips",
         "shortcodes": ['[jtb_esim]'],
         "prompt_context": (
-            "Cover essential Japan travel tips for foreigners: cash vs card culture, "
-            "currency exchange (airport vs 7-Eleven ATM vs Wise), phone/SIM options, "
-            "etiquette (shoes, chopsticks, train manners), tipping culture, "
-            "and useful apps (Google Maps, Google Translate, Japan Official Travel App)."
+            "Write about the 10 most common mistakes first-time Japan visitors make, "
+            "with specific solutions for each. "
+            "Target query: 'mistakes to avoid in japan first time'. "
+            "Cover real, specific mistakes: "
+            "1) Not carrying cash (ATMs: 7-Eleven/Japan Post only reliably accept foreign cards), "
+            "2) Buying a JR Pass without checking if it actually covers your itinerary (a Tokyo-only trip doesn't need one), "
+            "3) Booking non-refundable hotels before confirming visa, "
+            "4) Not getting a pocket WiFi or eSIM (roaming costs $15–30/day), "
+            "5) Wearing shoes that lace up tightly (remove shoes 20x/day at temples), "
+            "6) Packing too much (coin lockers ¥400–700/day, luggage forwarding service), "
+            "7) Skipping Nara/Hakone/Kamakura because 'staying in Tokyo', "
+            "8) Eating at tourist-trap restaurants near Senso-ji, "
+            "9) Not downloading Google Maps offline, "
+            "10) Missing the last train (typically 11:30pm–midnight). "
+            "Affiliate: eSIM for Japan, Klook day tours."
         ),
     },
-    5: {  # Saturday
-        "theme": "Japan Itineraries",
+    5: {  # Saturday — 低競合: 具体的な滞在エリア比較（Airbnb/ホテル）
+        "theme": "Tokyo Neighborhood Guide for Tourists",
+        "category_slug": "tokyo",
+        "category_name": "Tokyo",
+        "shortcodes": ['[jtb_hotel city="Tokyo" area="Shinjuku"]'],
+        "prompt_context": (
+            "Compare Tokyo's top neighborhoods for tourist stays with honest pros/cons. "
+            "Target query: 'best area to stay in tokyo for first time tourist'. "
+            "Cover 5 specific areas with REAL details: "
+            "Shinjuku (transport hub, JR lines to Fuji/Nikko, nightlife, ¥12,000–25,000/night hotels), "
+            "Shibuya (crossing, Harajuku walk, younger vibe, slightly pricier), "
+            "Asakusa (traditional feel, near Senso-ji, cheaper hotels ¥8,000–15,000, older area), "
+            "Ginza (luxury, 5-min walk to Tokyo Station, expensive ¥20,000+), "
+            "Akihabara (niche: anime/electronics fans only). "
+            "Give a DIRECT recommendation: 'For most first-timers, Shinjuku wins because...' "
+            "Affiliate: Booking.com Shinjuku hotels."
+        ),
+    },
+    6: {  # Sunday — 低競合: 北海道vs沖縄 どちらを選ぶか
+        "theme": "Hokkaido vs Okinawa — Which to Choose",
         "category_slug": "itineraries",
         "category_name": "Itineraries",
-        "shortcodes": ['[jtb_hotel city="Tokyo" area="Shinjuku"]',
-                       '[jtb_hotel city="Kyoto" area="Gion"]',
-                       '[jtb_flight origin="SYD" destination="TYO"]'],
+        "shortcodes": ['[jtb_hotel city="Sapporo" area="Sapporo"]',
+                       '[jtb_hotel city="Naha" area="Naha"]',
+                       '[jtb_flight origin="SYD" destination="CTS"]'],
         "prompt_context": (
-            "Create a detailed Japan itinerary guide with three options: "
-            "3-day Tokyo blitz, 5-day Tokyo + Kyoto classic, and 7-day Golden Route "
-            "(Tokyo → Nikko or Hakone → Mt. Fuji → Kyoto → Osaka). "
-            "Include day-by-day breakdowns, budget estimates, and booking tips."
-        ),
-    },
-    6: {  # Sunday
-        "theme": "eSIM & Wi-Fi in Japan",
-        "category_slug": "esim-wifi",
-        "category_name": "eSIM & Wi-Fi",
-        "shortcodes": ['[jtb_esim]'],
-        "prompt_context": (
-            "Compare all connectivity options for Japan visitors: pocket Wi-Fi rental "
-            "(pros/cons, cost), physical SIM cards (IIJmio, Mobal), eSIM providers "
-            "(Airalo, Holafly, Ubigi), and free Wi-Fi spots. "
-            "Include a clear recommendation for each traveler type."
+            "Answer the specific question: 'Should I visit Hokkaido or Okinawa?' "
+            "Target query: 'hokkaido vs okinawa which is better'. "
+            "Structure as a direct comparison: "
+            "Best season each (Hokkaido: June–Aug lavender, Feb snow festival; Okinawa: Apr–Jun, Oct–Nov), "
+            "Getting there (both need domestic flight from Tokyo: ~$80–150 AUD one-way), "
+            "Cost difference (Hokkaido slightly cheaper, Okinawa resort prices), "
+            "Activities (Hokkaido: nature/food/skiing; Okinawa: beaches/diving/Ryukyu culture), "
+            "Food (Hokkaido: dairy, crab, ramen; Okinawa: goya champuru, Awamori, sea grapes), "
+            "Give a clear recommendation matrix: 'Choose Hokkaido if... Choose Okinawa if...' "
+            "Affiliate: Booking.com for each, Klook activities (lavender farm tours, snorkeling)."
         ),
     },
 }
@@ -260,6 +324,81 @@ def build_competitor_context(competitor_data: dict, theme: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Internal link helpers
+# ---------------------------------------------------------------------------
+
+def fetch_existing_posts(limit: int = 50) -> list[dict]:
+    """Fetch recent published posts from WP for internal linking context."""
+    wp_url  = os.getenv("WP_URL", "").rstrip("/")
+    wp_user = os.getenv("WP_USER", "").strip()
+    wp_pass = os.getenv("WP_APP_PASSWORD", "").strip()
+    if not all([wp_url, wp_user, wp_pass]):
+        return []
+    try:
+        resp = requests.get(
+            f"{wp_url}/wp-json/wp/v2/posts",
+            params={"status": "publish", "per_page": limit, "_fields": "title,link"},
+            auth=(wp_user, wp_pass),
+            timeout=15,
+        )
+        if not resp.ok:
+            return []
+        return [
+            {"title": p["title"]["rendered"], "url": p["link"]}
+            for p in resp.json()
+        ]
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Schema.org JSON-LD builder
+# ---------------------------------------------------------------------------
+
+def build_jsonld_block(article: dict, theme: str) -> str:
+    """Return <script> tags with FAQPage + TravelAction JSON-LD."""
+    faq_items = article.get("faq_items", [])
+    blocks = []
+
+    if faq_items:
+        faq_ld = {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": item["question"],
+                    "acceptedAnswer": {"@type": "Answer", "text": item["answer"]},
+                }
+                for item in faq_items
+            ],
+        }
+        blocks.append(
+            '<script type="application/ld+json">\n'
+            + json.dumps(faq_ld, ensure_ascii=False, indent=2)
+            + "\n</script>"
+        )
+
+    travel_ld = {
+        "@context": "https://schema.org",
+        "@type": "TravelAction",
+        "name": f"Travel to Japan — {theme}",
+        "description": article["meta_description"],
+        "toLocation": {
+            "@type": "Country",
+            "name": "Japan",
+        },
+    }
+    blocks.append(
+        '<script type="application/ld+json">\n'
+        + json.dumps(travel_ld, ensure_ascii=False, indent=2)
+        + "\n</script>"
+    )
+
+    return "\n".join(blocks)
+
+
+# ---------------------------------------------------------------------------
 # Article generation
 # ---------------------------------------------------------------------------
 
@@ -282,27 +421,65 @@ Your writing style:
 - SEO-optimised: natural keyword use in headings and first paragraphs
 - Length: 1000–1500 words of body content (not counting shortcodes)
 
+LONG-TAIL KEYWORD FOCUS (critical for SEO):
+- Target a specific, long-tail angle (e.g. "how to use the JR Pass on Shinkansen without a reservation"
+  NOT "JR Pass guide")
+- Identify ONE primary question this article answers and state it in the first sentence
+  (e.g. "Confused about whether the JR Pass covers reserved Shinkansen seats?")
+- Give a direct 2–3 sentence answer to that question within the first 100 words
+  (this format is picked up by Google's AI Overview)
+- Every H2 heading should address a specific sub-question a real traveler would search for
+
 Always structure the article with:
-1. An engaging introduction (hook + what the article covers)
-2. Multiple H2 sections with H3 sub-sections where appropriate
+1. Intro: primary question → direct answer → expand with context
+2. Multiple H2 sections with H3 sub-sections (each H2 = a real traveler sub-question)
 3. Bullet lists or numbered lists for tips/steps
 4. Relevant shortcodes inserted naturally in the flow (not at the very end)
-5. A final H2 section titled "## Plan Your Japan Trip Today" with a CTA
+5. FAQ section (H2: "Frequently Asked Questions") with 5–7 Q&As covering long-tail queries
+6. Final H2: "Plan Your Japan Trip Today" with CTA
 
 Return ONLY raw JSON — no markdown fences, no extra text — in this exact shape:
 {{
-  "title": "<SEO title, max 65 chars>",
-  "meta_description": "<155 char max meta description>",
-  "content": "<full HTML article body, using <h2>/<h3>/<p>/<ul>/<ol>/<li> tags>"
+  "title": "<SEO title — rules below>",
+  "meta_description": "<meta description — rules below>",
+  "focus_keyword": "<primary long-tail keyword phrase, 3-5 words>",
+  "primary_question": "<the one specific question this entire article answers>",
+  "faq_items": [
+    {{"question": "...", "answer": "..."}},
+    {{"question": "...", "answer": "..."}}
+  ],
+  "content": "<full HTML article body, using <h2>/<h3>/<p>/<ul>/<ol>/<li> tags — include FAQ as HTML>"
 }}
 
-Important for shortcode placement:
-- Insert shortcodes as plain text inside <p> tags or on their own line between paragraphs.
-- Example: <p>[jtb_flight origin="SYD" destination="TYO"]</p>
+TITLE RULES (critical for click-through rate):
+- Max 60 characters
+- Start with the target keyword (first 2–3 words = keyword)
+- Be specific: answer WHAT the reader gets ("Hakone Day Trip: Exact Route & Timings")
+- FORBIDDEN phrases: "Complete Guide", "Ultimate Guide", "Everything You Need", "Your Guide"
+- FORBIDDEN opener: "Japan Travel Base:" prefix — never start with the site name
+- Include year ({CURRENT_YEAR}) only if it fits naturally
+- Good examples: "Hakone Day Trip: What to Do, See & Skip (2026)", "JR Pass Worth It? Honest Answer by Trip Length"
+
+META DESCRIPTION RULES (critical for click-through rate):
+- 140–155 characters exactly
+- Open with a direct answer to the primary question — not a question, not "Learn how to..."
+- Include one specific concrete detail (a place name, a number, a price range)
+- Close with an action phrase: "Here's exactly what to plan", "Use this to decide", "Find out below"
+- FORBIDDEN openers: "Japan Travel Base", "Discover", "Explore", "In this guide", "Are you..."
+- Good example: "The JR Pass pays off on trips covering Tokyo–Kyoto–Osaka and beyond. Here's the exact calculation for your itinerary."
+
+The "faq_items" array must have 5–7 items. The FAQ section in "content" should be plain HTML
+(no JSON-LD there — structured data is injected separately).
+Insert shortcodes as plain text inside <p> tags or on their own line between paragraphs.
+Example: <p>[jtb_flight origin="SYD" destination="TYO"]</p>
 """
 
 
-def build_user_prompt(day_config: dict, seo_insights: dict | None = None) -> str:
+def build_user_prompt(
+    day_config: dict,
+    seo_insights: dict | None = None,
+    existing_posts: list[dict] | None = None,
+) -> str:
     theme = day_config["theme"]
     context = day_config["prompt_context"] or get_seasonal_context()
     shortcodes = day_config["shortcodes"]
@@ -312,6 +489,19 @@ def build_user_prompt(day_config: dict, seo_insights: dict | None = None) -> str
     if seo_insights and seo_insights.get("competitors"):
         competitor_context = build_competitor_context(seo_insights["competitors"], theme)
 
+    # Internal links block
+    internal_link_block = ""
+    if existing_posts:
+        link_list = "\n".join(
+            f"- {p['title']} → {p['url']}" for p in existing_posts[:20]
+        )
+        internal_link_block = (
+            "\n\nINTERNAL LINKS — naturally embed 2–3 of these existing articles as "
+            '<a href="URL">anchor text</a> links where contextually relevant '
+            "(do NOT force them — only include where they genuinely add value):\n"
+            + link_list
+        )
+
     shortcode_instructions = "\n".join(
         f'- Insert the shortcode {sc} once, in a contextually appropriate place.'
         for sc in shortcodes
@@ -320,7 +510,7 @@ def build_user_prompt(day_config: dict, seo_insights: dict | None = None) -> str
     return f"""Write a Japan travel article on the theme: **{theme}**
 
 Context / angle:
-{context}{competitor_context}
+{context}{competitor_context}{internal_link_block}
 
 Shortcodes to include (insert them naturally in the HTML content):
 {shortcode_instructions}
@@ -329,8 +519,12 @@ Remember: respond with raw JSON only (no ```json fences).
 """
 
 
-def generate_article(day_config: dict, seo_insights: dict | None = None) -> dict:
-    """Call Claude API and return parsed {title, meta_description, content}."""
+def generate_article(
+    day_config: dict,
+    seo_insights: dict | None = None,
+    existing_posts: list[dict] | None = None,
+) -> dict:
+    """Call Claude API and return parsed article dict."""
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         raise EnvironmentError("ANTHROPIC_API_KEY is not set in .env")
@@ -339,18 +533,36 @@ def generate_article(day_config: dict, seo_insights: dict | None = None) -> dict
 
     print(f"  Calling Claude API (streaming) for theme: {day_config['theme']} …")
 
+    RETRY_WAITS = [30, 60, 120]
     full_text = ""
-    with client.messages.stream(
-        model="claude-sonnet-4-0",
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[
-            {"role": "user", "content": build_user_prompt(day_config, seo_insights)}
-        ],
-    ) as stream:
-        for text_chunk in stream.text_stream:
-            full_text += text_chunk
-            print(text_chunk, end="", flush=True)
+    for attempt, wait in enumerate([0] + RETRY_WAITS):
+        if wait:
+            print(f"  [RETRY {attempt}/{len(RETRY_WAITS)}] overloaded — {wait}秒後に再試行…")
+            time.sleep(wait)
+        try:
+            full_text = ""
+            with client.messages.stream(
+                model="claude-sonnet-4-0",
+                max_tokens=8000,
+                system=SYSTEM_PROMPT,
+                messages=[
+                    {"role": "user", "content": build_user_prompt(day_config, seo_insights, existing_posts)}
+                ],
+            ) as stream:
+                for text_chunk in stream.text_stream:
+                    full_text += text_chunk
+                    print(text_chunk, end="", flush=True)
+            # 空レスポンスはリトライ
+            if not full_text.strip():
+                if attempt < len(RETRY_WAITS):
+                    print(f"\n  [WARN] Empty response from Claude, retrying…")
+                    continue
+                raise ValueError("Claude returned empty response after all retries")
+            break  # 成功
+        except (anthropic.InternalServerError, anthropic.RateLimitError) as exc:
+            if attempt < len(RETRY_WAITS):
+                continue
+            raise
 
     print()  # newline after streaming
 
@@ -369,24 +581,57 @@ def generate_article(day_config: dict, seo_insights: dict | None = None) -> dict
         # Remove non-printable control chars except \n \r \t
         cleaned = _re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", cleaned)
 
-        # Try direct parse first
+        if not cleaned:
+            raise json.JSONDecodeError("Empty response from Claude", "", 0)
+
+        def _extract_field(t: str, key: str) -> str:
+            pattern = rf'"{_re.escape(key)}"\s*:\s*"(.*?)(?<!\\)"(?=\s*[,}}])'
+            m = _re.search(pattern, t, _re.DOTALL)
+            return m.group(1) if m else ""
+
+        # Attempt 1: direct parse
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
             pass
 
-        # Fallback: extract fields with regex (handles unescaped newlines in content)
-        title = _re.search(r'"title"\s*:\s*"(.*?)"(?=\s*,\s*"meta_description")', cleaned, _re.S)
-        meta  = _re.search(r'"meta_description"\s*:\s*"(.*?)"(?=\s*,\s*"content")', cleaned, _re.S)
-        cont  = _re.search(r'"content"\s*:\s*"(.*?)"\s*\}', cleaned, _re.S)
-        if title and meta and cont:
-            return {
-                "title":            title.group(1).replace('\\"', '"'),
-                "meta_description": meta.group(1).replace('\\"', '"'),
-                "content":          cont.group(1).replace('\\"', '"').replace("\\n", "\n"),
-            }
+        # Attempt 2: escape literal newlines inside JSON string values, then retry
+        try:
+            fixed = _re.sub(
+                r'("(?:[^"\\]|\\.)*")',
+                lambda m: m.group(0).replace('\n', '\\n').replace('\r', '\\r'),
+                cleaned,
+                flags=_re.DOTALL,
+            )
+            return json.loads(fixed)
+        except (ValueError, json.JSONDecodeError):
+            pass
 
-        raise json.JSONDecodeError("Could not parse response", cleaned, 0)
+        # Attempt 3: manual regex extraction of each field
+        title       = _extract_field(cleaned, "title")
+        meta        = _extract_field(cleaned, "meta_description")
+        keyword     = _extract_field(cleaned, "focus_keyword")
+        question    = _extract_field(cleaned, "primary_question")
+        content_raw = _extract_field(cleaned, "content")
+        if not title or not content_raw:
+            raise json.JSONDecodeError("Could not parse response", cleaned, 0)
+
+        faq_match = _re.search(r'"faq_items"\s*:\s*(\[.*?\])', cleaned, _re.DOTALL)
+        faq_items = []
+        if faq_match:
+            try:
+                faq_items = json.loads(faq_match.group(1))
+            except Exception:
+                pass
+
+        return {
+            "title":            title.replace('\\"', '"'),
+            "meta_description": meta.replace('\\"', '"'),
+            "focus_keyword":    keyword,
+            "primary_question": question,
+            "faq_items":        faq_items,
+            "content":          content_raw.replace('\\"', '"').replace("\\n", "\n"),
+        }
 
     try:
         article = _extract_article(full_text)
@@ -398,69 +643,75 @@ def generate_article(day_config: dict, seo_insights: dict | None = None) -> dict
     if missing:
         raise ValueError(f"Claude response missing keys: {missing}")
 
+    # Ensure faq_items is a list (fallback to empty)
+    if not isinstance(article.get("faq_items"), list):
+        article["faq_items"] = []
+
     return article
 
 
 # ---------------------------------------------------------------------------
-# Featured image: generate with DALL-E 3, upload to WordPress
+# Featured image: Pexels（本物の旅行写真）→ WordPress
 # ---------------------------------------------------------------------------
 
-# Photographic style prompt appended to every image request.
-_IMAGE_STYLE = (
-    "Professional travel photography, ultra-realistic, golden hour lighting, "
-    "vibrant colours, shallow depth of field, 16:9 landscape orientation, "
-    "no text, no watermarks, no people's faces."
-)
-
-# Per-theme visual descriptions for DALL-E 3.
-IMAGE_PROMPTS = {
-    "Tokyo":              "Iconic Tokyo skyline at sunset with Tokyo Tower and Mount Fuji silhouette in the background, neon-lit Shinjuku streets below.",
-    "Osaka / Kyoto":      "Fushimi Inari shrine vermilion torii gates winding through a misty cedar forest in Kyoto, Japan.",
-    "Transport in Japan": "A sleek white Shinkansen bullet train speeding past snow-capped Mount Fuji under a clear blue sky.",
-    "Seasonal Travel":    "Thousands of cherry blossom trees in full bloom lining a canal in Tokyo, soft pink petals floating in the breeze.",
-    "Travel Tips":        "A traveler's flat-lay on a wooden table: Japanese yen coins, IC card, Japan map, passport, and green tea.",
-    "Japan Itineraries":  "Aerial view of the classic Japan Golden Route — Tokyo tower, Kyoto temple, and Osaka castle composite.",
-    "eSIM & Wi-Fi in Japan": "Close-up of a smartphone showing a Japan map with location pins, held above a blurred Tokyo street scene.",
+# Per-theme Pexels search queries.
+PEXELS_QUERIES = {
+    "Tokyo":                 "Tokyo Japan skyline night",
+    "Osaka / Kyoto":         "Kyoto Japan torii gates temple",
+    "Transport in Japan":    "Shinkansen bullet train Japan Mount Fuji",
+    "Seasonal Travel":       "Japan spring green foliage golden week",
+    "Travel Tips":           "Japan travel passport map",
+    "Japan Itineraries":     "Japan travel golden route Kyoto Tokyo",
+    "eSIM & Wi-Fi in Japan": "smartphone Japan city travel",
 }
 
 
 def generate_featured_image(theme: str) -> bytes | None:
-    """Call DALL-E 3 and return raw PNG bytes, or None on failure."""
-    import re as _re2
-    api_key = _re2.sub(r'\s', '', os.getenv("OPENAI_API_KEY", ""))
-    if not api_key:
-        print("  [SKIP] OPENAI_API_KEY not set — skipping image generation.")
+    """Pexelsから本物の旅行写真を取得してJPEGバイトを返す。失敗時はNone。"""
+    pexels_key = os.getenv("PEXELS_API_KEY", "").strip()
+    if not pexels_key:
+        print("  [SKIP] PEXELS_API_KEY not set — skipping image fetch.")
         return None
 
-    visual = IMAGE_PROMPTS.get(theme, f"Beautiful travel scene representing {theme} in Japan.")
-    prompt = f"{visual} {_IMAGE_STYLE}"
+    # themeからPexelsクエリを決定（未知のテーマはfallback）
+    query = PEXELS_QUERIES.get(theme, f"{theme} Japan travel")
+    print(f"  Pexelsで写真取得中: {query} …")
 
-    print(f"  Generating featured image with DALL-E 3 …")
+    try:
+        resp = requests.get(
+            "https://api.pexels.com/v1/search",
+            headers={"Authorization": pexels_key},
+            params={"query": query, "per_page": 15, "orientation": "landscape"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        photos = resp.json().get("photos", [])
 
-    resp = requests.post(
-        "https://api.openai.com/v1/images/generations",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model":   "dall-e-3",
-            "prompt":  prompt,
-            "n":       1,
-            "size":    "1792x1024",
-            "quality": "standard",
-            "response_format": "url",
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    image_url = resp.json()["data"][0]["url"]
+        # 結果がなければ汎用クエリでリトライ
+        if not photos:
+            print(f"  [WARN] '{query}' で結果なし — 'Japan travel' で再試行")
+            resp2 = requests.get(
+                "https://api.pexels.com/v1/search",
+                headers={"Authorization": pexels_key},
+                params={"query": "Japan travel", "per_page": 15, "orientation": "landscape"},
+                timeout=15,
+            )
+            resp2.raise_for_status()
+            photos = resp2.json().get("photos", [])
 
-    # Download the generated image.
-    img_resp = requests.get(image_url, timeout=30)
-    img_resp.raise_for_status()
-    print(f"  Image generated ({len(img_resp.content) // 1024} KB).")
-    return img_resp.content
+        if not photos:
+            print("  [SKIP] Pexels: 写真が見つかりませんでした")
+            return None
+
+        photo_url = random.choice(photos[:10])["src"]["large2x"]
+        img_resp = requests.get(photo_url, timeout=30)
+        img_resp.raise_for_status()
+        print(f"  ✓ Pexels写真取得完了 ({len(img_resp.content) // 1024} KB)")
+        return img_resp.content
+
+    except Exception as exc:
+        print(f"  [WARN] Pexels取得失敗: {exc}")
+        return None
 
 
 def upload_image_to_wp(image_bytes: bytes, title: str, auth: tuple) -> int | None:
@@ -473,7 +724,7 @@ def upload_image_to_wp(image_bytes: bytes, title: str, auth: tuple) -> int | Non
     for ch in " /\\:*?\"<>|'":
         safe_title = safe_title.replace(ch, "-")
     safe_title = safe_title[:60].strip("-")
-    filename = f"{safe_title}-{datetime.now().strftime('%Y%m%d')}.png"
+    filename = f"{safe_title}-{datetime.now().strftime('%Y%m%d')}.jpg"
 
     print(f"  Uploading image to WordPress as '{filename}' …")
 
@@ -481,7 +732,7 @@ def upload_image_to_wp(image_bytes: bytes, title: str, auth: tuple) -> int | Non
         endpoint,
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Type": "image/png",
+            "Content-Type": "image/jpeg",
         },
         data=image_bytes,
         auth=auth,
@@ -562,7 +813,7 @@ def post_draft(article: dict, day_config: dict) -> int:
     payload = {
         "title":      article["title"],
         "content":    full_content,
-        "status":     "draft",
+        "status":     "publish",
         **({"categories": [category_id]} if category_id else {}),
         "meta": {
             "_yoast_wpseo_metadesc":     article["meta_description"],
@@ -599,11 +850,82 @@ def log_error(message: str) -> None:
     print(f"\n[ERROR] {message}", file=sys.stderr)
 
 
+def count_today_posts() -> int:
+    """Count how many articles were posted today (UTC date) in article_log.csv."""
+    if not os.path.isfile(LOG_CSV_FILE):
+        return 0
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    count = 0
+    try:
+        with open(LOG_CSV_FILE, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("datetime", "").startswith(today):
+                    count += 1
+    except Exception:
+        pass
+    return count
+
+
+def is_theme_recently_published(theme: str, days: int = 90) -> bool:
+    """90日以内に同テーマが投稿済みか確認（重複防止）。"""
+    if not os.path.isfile(LOG_CSV_FILE):
+        return False
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    # テーマから意味のある単語を抽出（ストップワードを除く）
+    stop = {"a", "the", "in", "to", "of", "for", "and", "or", "vs", "your", "how"}
+    theme_words = {w.lower() for w in theme.split() if w.lower() not in stop and len(w) > 2}
+    try:
+        with open(LOG_CSV_FILE, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    row_dt = datetime.fromisoformat(
+                        row["datetime"].replace(" UTC", "+00:00")
+                    )
+                except Exception:
+                    continue
+                if row_dt < cutoff:
+                    continue
+                row_title = row.get("title", "").lower()
+                matches = sum(1 for w in theme_words if w in row_title)
+                if matches >= 2:
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def find_fresh_day_config(current_weekday: int) -> dict:
+    """直近90日に投稿済みでないテーマを今日から探して返す。"""
+    for offset in range(len(SCHEDULE)):
+        candidate = (current_weekday + offset) % len(SCHEDULE)
+        config = SCHEDULE[candidate]
+        if not is_theme_recently_published(config["theme"]):
+            if offset > 0:
+                print(
+                    f"  [SKIP] '{SCHEDULE[current_weekday]['theme']}' は直近90日内に投稿済 → "
+                    f"'{config['theme']}' に変更"
+                )
+            return config
+    # 全テーマ投稿済みの場合はスキップ（重複生成を防ぐ）
+    print("  [SKIP] 全テーマが直近90日内に投稿済。本日は記事生成をスキップします。")
+    sys.exit(0)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+DAILY_POST_LIMIT = 2
+
 def main() -> None:
+    today_count = count_today_posts()
+    if today_count >= DAILY_POST_LIMIT:
+        print(f"  ⏸  本日の投稿上限 ({DAILY_POST_LIMIT}本) に達しています ({today_count}本投稿済)。スキップします。")
+        sys.exit(0)
+
     strengthen_mode = "--strengthen" in sys.argv
     weekday = datetime.now().weekday()  # 0=Mon … 6=Sun
 
@@ -617,9 +939,9 @@ def main() -> None:
             day_config = strengthen_config
             print(f"  [SEO Mode] GSC強化記事を生成: {strengthen_config.get('_gsc_url', '')}")
         else:
-            day_config = SCHEDULE[weekday]
+            day_config = find_fresh_day_config(weekday)
     else:
-        day_config = SCHEDULE[weekday]
+        day_config = find_fresh_day_config(weekday)
 
     print("=" * 60)
     print(f"  Japan Travel Base — Article Generator")
@@ -630,9 +952,14 @@ def main() -> None:
         print(f"  SEO     : 競合分析インサイトあり ✓")
     print("=" * 60)
 
+    # Fetch existing posts for internal linking
+    existing_posts = fetch_existing_posts()
+    if existing_posts:
+        print(f"  Internal links: {len(existing_posts)} existing posts loaded ✓")
+
     # 1. Generate article
     try:
-        article = generate_article(day_config, seo_insights)
+        article = generate_article(day_config, seo_insights, existing_posts)
     except (EnvironmentError, ValueError, anthropic.APIError) as exc:
         log_error(f"Article generation failed — {exc}")
         sys.exit(1)
@@ -652,7 +979,7 @@ def main() -> None:
     try:
         image_bytes = generate_featured_image(day_config["theme"])
         if image_bytes:
-            image_filename = f"image_{timestamp}.png"
+            image_filename = f"image_{timestamp}.jpg"
             image_path = os.path.join("pending_articles", image_filename)
             with open(image_path, "wb") as f:
                 f.write(image_bytes)
@@ -660,11 +987,17 @@ def main() -> None:
     except Exception as exc:
         print(f"  [WARN] Image generation failed: {exc}")
 
+    # Build JSON-LD and prepend to content
+    jsonld = build_jsonld_block(article, day_config["theme"])
     meta_comment = f'<!-- meta_description: {article["meta_description"]} -->\n'
+    full_content = jsonld + "\n" + meta_comment + article["content"]
+
     pending_payload = {
         "title":            article["title"],
-        "content":          meta_comment + article["content"],
+        "content":          full_content,
         "meta_description": article["meta_description"],
+        "focus_keyword":    article.get("focus_keyword", ""),
+        "primary_question": article.get("primary_question", ""),
         "category_slug":    day_config["category_slug"],
         "category_name":    day_config["category_name"],
         "created_at":       datetime.now(timezone.utc).isoformat(),
@@ -673,16 +1006,27 @@ def main() -> None:
     with open(article_path, "w", encoding="utf-8") as f:
         json.dump(pending_payload, f, ensure_ascii=False, indent=2)
 
-    # Update index.json
+    # Update index.json (retry on EDEADLK / transient OS errors)
     index_path = "pending_articles/index.json"
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as f:
-            index_data = json.load(f)
+    for _attempt in range(5):
+        try:
+            if os.path.exists(index_path):
+                with open(index_path, "r", encoding="utf-8") as f:
+                    index_data = json.load(f)
+            else:
+                index_data = {"files": []}
+            index_data["files"].append(article_filename)
+            _tmp = index_path + ".tmp"
+            with open(_tmp, "w", encoding="utf-8") as f:
+                json.dump(index_data, f, indent=2)
+            os.replace(_tmp, index_path)
+            break
+        except OSError as _e:
+            import time as _time
+            print(f"  [WARN] index.json write attempt {_attempt+1} failed: {_e} — retrying...")
+            _time.sleep(0.5)
     else:
-        index_data = {"files": []}
-    index_data["files"].append(article_filename)
-    with open(index_path, "w", encoding="utf-8") as f:
-        json.dump(index_data, f, indent=2)
+        print("  [ERROR] index.json update failed after 5 attempts — article saved but not indexed")
 
     print(f"\n  ✓ Article saved to {article_path}")
     print(f"  ✓ WordPress will fetch and create draft automatically")
